@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Classes · AttendCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar-mount"></div>
+    <main class="main-content" id="main-mount">
+
+      <div class="d-flex justify-content-end mb-3">
+        <button class="btn btn-amber btn-sm" data-bs-toggle="modal" data-bs-target="#classModal" id="addClassBtn">+ New Class</button>
+      </div>
+
+      <div class="row g-3" id="classGrid">
+        <div class="col-12 text-center text-muted-soft py-4">Loading classes…</div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Create class modal -->
+  <div class="modal fade" id="classModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form id="classForm">
+          <div class="modal-header">
+            <h5 class="modal-title display-font">Create a Class</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Class Name</label>
+              <input type="text" class="form-control" id="className" required placeholder="e.g. CSE-3A">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Subject</label>
+              <select class="form-select" id="classSubject" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Department</label>
+              <select class="form-select" id="classDepartment" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Schedule (optional)</label>
+              <input type="text" class="form-control" id="classSchedule" placeholder="Mon/Wed/Fri 10:00–11:00">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-ink" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-ink" id="classSaveBtn">Create Class</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage roster modal -->
+  <div class="modal fade" id="rosterModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title display-font">Manage Roster — <span id="rosterClassName"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted-soft" style="font-size:0.88rem;">Select students to enroll in this class.</p>
+          <div id="rosterStudentList" style="max-height:340px; overflow-y:auto;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-ink" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-ink" id="rosterSaveBtn">Save Roster</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    const user = Auth.guard(['teacher', 'admin']);
+    UI.renderShell('My Classes');
+
+    let classCache = [];
+    let allStudents = [];
+    let activeRosterClassId = null;
+    const classModal = new bootstrap.Modal(document.getElementById('classModal'));
+    const rosterModal = new bootstrap.Modal(document.getElementById('rosterModal'));
+
+    const loadDropdowns = async () => {
+      const [{ subjects }, { departments }] = await Promise.all([
+        API.get('/subjects'),
+        API.get('/departments'),
+      ]);
+      document.getElementById('classSubject').innerHTML = subjects.map(s => `<option value="${s._id}">${s.name} (${s.code})</option>`).join('');
+      document.getElementById('classDepartment').innerHTML = departments.map(d => `<option value="${d._id}">${d.name}</option>`).join('');
+    };
+
+    const renderClasses = (classes) => {
+      const grid = document.getElementById('classGrid');
+      if (!classes.length) {
+        grid.innerHTML = `<div class="col-12"><div class="empty-state"><div class="icon">&#9670;</div>No classes yet. Create your first class to start marking attendance.</div></div>`;
+        return;
+      }
+      grid.innerHTML = classes.map(c => `
+        <div class="col-md-6 col-lg-4">
+          <div class="card card-ledger h-100">
+            <div class="card-body">
+              <span class="badge-soft badge-excused mb-2">${c.subject ? c.subject.code : '—'}</span>
+              <h5 class="display-font mb-1">${c.name}</h5>
+              <p class="text-muted-soft mb-2" style="font-size:0.85rem;">${c.subject ? c.subject.name : ''}</p>
+              <p class="text-muted-soft mb-3" style="font-size:0.82rem;">${c.students.length} student${c.students.length !== 1 ? 's' : ''} enrolled${c.schedule ? ' · ' + c.schedule : ''}</p>
+              <div class="d-flex gap-2 flex-wrap">
+                <a href="teacher-attendance.html?classId=${c._id}" class="btn btn-sm btn-ink">Mark Attendance</a>
+                <button class="btn btn-sm btn-outline-ink" onclick="openRoster('${c._id}')">Manage Roster</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    };
+
+    const fetchClasses = async () => {
+      try {
+        const { classes } = await API.get('/classes');
+        classCache = classes;
+        renderClasses(classes);
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    };
+
+    document.getElementById('classForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('classSaveBtn');
+      btn.disabled = true;
+      try {
+        await API.post('/classes', {
+          name: document.getElementById('className').value.trim(),
+          subject: document.getElementById('classSubject').value,
+          department: document.getElementById('classDepartment').value,
+          schedule: document.getElementById('classSchedule').value.trim(),
+        });
+        UI.toast('Class created', 'success');
+        classModal.hide();
+        document.getElementById('classForm').reset();
+        fetchClasses();
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    window.openRoster = async (classId) => {
+      activeRosterClassId = classId;
+      const cls = classCache.find(c => c._id === classId);
+      document.getElementById('rosterClassName').textContent = cls.name;
+
+      if (!allStudents.length) {
+        const { users } = await API.get('/users?role=student');
+        allStudents = users;
+      }
+
+      const enrolledIds = new Set(cls.students.map(s => s._id));
+      document.getElementById('rosterStudentList').innerHTML = allStudents.map(s => `
+        <div class="form-check py-1 border-bottom">
+          <input class="form-check-input roster-check" type="checkbox" value="${s._id}" id="ros_${s._id}" ${enrolledIds.has(s._id) ? 'checked' : ''}>
+          <label class="form-check-label" for="ros_${s._id}">${s.name} <span class="text-muted-soft">(${s.rollNumber || s.email})</span></label>
+        </div>
+      `).join('');
+
+      rosterModal.show();
+    };
+
+    document.getElementById('rosterSaveBtn').addEventListener('click', async () => {
+      const checked = Array.from(document.querySelectorAll('.roster-check:checked')).map(c => c.value);
+      try {
+        await API.put(`/classes/${activeRosterClassId}`, { students: checked });
+        UI.toast('Roster updated', 'success');
+        rosterModal.hide();
+        fetchClasses();
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    });
+
+    (async () => {
+      await loadDropdowns();
+      await fetchClasses();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Users · AttendCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar-mount"></div>
+    <main class="main-content" id="main-mount">
+
+      <div class="card card-ledger mb-3">
+        <div class="card-body d-flex flex-wrap gap-2 align-items-end">
+          <div class="flex-grow-1" style="min-width:200px;">
+            <label class="form-label mb-1">Search</label>
+            <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Name, email, or roll no.">
+          </div>
+          <div style="min-width:160px;">
+            <label class="form-label mb-1">Role</label>
+            <select class="form-select form-select-sm" id="roleFilter">
+              <option value="">All roles</option>
+              <option value="admin">Admin</option>
+              <option value="teacher">Teacher</option>
+              <option value="student">Student</option>
+            </select>
+          </div>
+          <button class="btn btn-outline-ink btn-sm" id="filterBtn">Filter</button>
+          <button class="btn btn-amber btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#userModal" id="addUserBtn">+ Add User</button>
+        </div>
+      </div>
+
+      <div class="card card-ledger">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>All Users</span>
+          <span class="text-muted-soft" id="userCount" style="font-size:0.8rem;"></span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-ledger mb-0">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Roll No.</th>
+                  <th>Department</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="userTableBody">
+                <tr><td colspan="7" class="text-center text-muted-soft py-4">Loading users…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Add/Edit User Modal -->
+  <div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form id="userForm">
+          <div class="modal-header">
+            <h5 class="modal-title display-font" id="userModalTitle">Add User</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="userId">
+            <div class="mb-3">
+              <label class="form-label">Full Name</label>
+              <input type="text" class="form-control" id="formName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" id="formEmail" required>
+            </div>
+            <div class="mb-3" id="passwordGroup">
+              <label class="form-label">Password</label>
+              <input type="password" class="form-control" id="formPassword" minlength="6">
+              <div class="form-text">Leave blank when editing to keep the current password.</div>
+            </div>
+            <div class="row">
+              <div class="col-6 mb-3">
+                <label class="form-label">Role</label>
+                <select class="form-select" id="formRole" required>
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="col-6 mb-3">
+                <label class="form-label">Roll Number</label>
+                <input type="text" class="form-control" id="formRollNumber">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Department</label>
+              <select class="form-select" id="formDepartment">
+                <option value="">— None —</option>
+              </select>
+            </div>
+            <div class="mb-3" id="activeGroup">
+              <label class="form-label d-block">Status</label>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="formIsActive" checked>
+                <label class="form-check-label" for="formIsActive">Active</label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-ink" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-ink" id="userSaveBtn">Save User</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    const user = Auth.guard(['admin']);
+    UI.renderShell('Manage Users');
+
+    let departments = [];
+    let editingUserId = null;
+    const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+
+    const loadDepartmentsIntoSelect = async () => {
+      const { departments: depts } = await API.get('/departments');
+      departments = depts;
+      const select = document.getElementById('formDepartment');
+      select.innerHTML = '<option value="">— None —</option>' +
+        depts.map(d => `<option value="${d._id}">${d.name}</option>`).join('');
+    };
+
+    const renderUsers = (users) => {
+      const tbody = document.getElementById('userTableBody');
+      document.getElementById('userCount').textContent = `${users.length} user${users.length !== 1 ? 's' : ''}`;
+
+      if (!users.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted-soft py-4">No users found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td><strong>${u.name}</strong></td>
+          <td>${u.email}</td>
+          <td>${UI.rolePill(u.role)}</td>
+          <td>${u.rollNumber || '—'}</td>
+          <td>${u.department ? u.department.name : '—'}</td>
+          <td>${u.isActive ? '<span class="badge-soft badge-present">active</span>' : '<span class="badge-soft badge-absent">inactive</span>'}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-ink me-1" onclick="editUser('${u._id}')">Edit</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u._id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+    };
+
+    let allUsersCache = [];
+
+    const fetchUsers = async () => {
+      const role = document.getElementById('roleFilter').value;
+      const search = document.getElementById('searchInput').value.trim();
+      const params = new URLSearchParams();
+      if (role) params.set('role', role);
+      if (search) params.set('search', search);
+
+      try {
+        const { users } = await API.get(`/users?${params.toString()}`);
+        allUsersCache = users;
+        renderUsers(users);
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    };
+
+    document.getElementById('filterBtn').addEventListener('click', fetchUsers);
+    document.getElementById('searchInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') fetchUsers();
+    });
+
+    document.getElementById('addUserBtn').addEventListener('click', () => {
+      editingUserId = null;
+      document.getElementById('userForm').reset();
+      document.getElementById('userModalTitle').textContent = 'Add User';
+      document.getElementById('formPassword').required = true;
+      document.getElementById('passwordGroup').querySelector('.form-text').style.display = 'none';
+      document.getElementById('activeGroup').style.display = 'none';
+    });
+
+    window.editUser = (id) => {
+      const u = allUsersCache.find(x => x._id === id);
+      if (!u) return;
+      editingUserId = id;
+      document.getElementById('userModalTitle').textContent = 'Edit User';
+      document.getElementById('formName').value = u.name;
+      document.getElementById('formEmail').value = u.email;
+      document.getElementById('formPassword').value = '';
+      document.getElementById('formPassword').required = false;
+      document.getElementById('passwordGroup').querySelector('.form-text').style.display = 'block';
+      document.getElementById('formRole').value = u.role;
+      document.getElementById('formRollNumber').value = u.rollNumber || '';
+      document.getElementById('formDepartment').value = u.department ? u.department._id : '';
+      document.getElementById('activeGroup').style.display = 'block';
+      document.getElementById('formIsActive').checked = u.isActive;
+      userModal.show();
+    };
+
+    window.deleteUser = async (id) => {
+      if (!confirm('Delete this user permanently? This cannot be undone.')) return;
+      try {
+        await API.del(`/users/${id}`);
+        UI.toast('User deleted', 'success');
+        fetchUsers();
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    };
+
+    document.getElementById('userForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('userSaveBtn');
+      btn.disabled = true;
+
+      const payload = {
+        name: document.getElementById('formName').value.trim(),
+        email: document.getElementById('formEmail').value.trim(),
+        role: document.getElementById('formRole').value,
+        rollNumber: document.getElementById('formRollNumber').value.trim() || undefined,
+        department: document.getElementById('formDepartment').value || undefined,
+      };
+      const password = document.getElementById('formPassword').value;
+      if (password) payload.password = password;
+
+      try {
+        if (editingUserId) {
+          payload.isActive = document.getElementById('formIsActive').checked;
+          await API.put(`/users/${editingUserId}`, payload);
+          UI.toast('User updated', 'success');
+        } else {
+          await API.post('/users', payload);
+          UI.toast('User created', 'success');
+        }
+        userModal.hide();
+        fetchUsers();
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    (async () => {
+      await loadDepartmentsIntoSelect();
+      await fetchUsers();
+    })();
+  </script>
+</body>
+</html>

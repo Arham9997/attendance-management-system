@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mark Attendance · AttendCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar-mount"></div>
+    <main class="main-content" id="main-mount">
+
+      <div class="card card-ledger mb-3">
+        <div class="card-body d-flex flex-wrap gap-3 align-items-end">
+          <div style="min-width:240px;">
+            <label class="form-label mb-1">Class</label>
+            <select class="form-select form-select-sm" id="classSelect"></select>
+          </div>
+          <div style="min-width:180px;">
+            <label class="form-label mb-1">Date</label>
+            <input type="date" class="form-control form-control-sm" id="dateInput">
+          </div>
+          <button class="btn btn-outline-ink btn-sm" id="loadRosterBtn">Load Roster</button>
+          <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-outline-ink" id="markAllPresentBtn">Mark All Present</button>
+            <button class="btn btn-sm btn-outline-ink" id="markAllAbsentBtn">Mark All Absent</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-ledger">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span id="rosterCardTitle">Roster</span>
+          <span class="text-muted-soft" id="rosterMeta" style="font-size:0.8rem;"></span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-ledger mb-0">
+              <thead>
+                <tr>
+                  <th>Roll No.</th>
+                  <th>Student</th>
+                  <th>Status</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="rosterTableBody">
+                <tr><td colspan="4" class="text-center text-muted-soft py-4">Select a class and date, then click "Load Roster".</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer bg-transparent border-0 text-end p-3">
+          <button class="btn btn-amber" id="saveAttendanceBtn" disabled>Save Attendance</button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    const user = Auth.guard(['teacher', 'admin']);
+    UI.renderShell('Mark Attendance');
+
+    let currentRoster = []; // [{ _id, name, rollNumber }]
+
+    const todayISO = () => new Date().toISOString().split('T')[0];
+    document.getElementById('dateInput').value = todayISO();
+
+    const loadClasses = async () => {
+      const { classes } = await API.get('/classes');
+      const select = document.getElementById('classSelect');
+      if (!classes.length) {
+        select.innerHTML = '<option value="">No classes available</option>';
+        return;
+      }
+      select.innerHTML = classes.map(c => `<option value="${c._id}">${c.name} — ${c.subject ? c.subject.code : ''}</option>`).join('');
+
+      // Preselect from query string if present (?classId=...)
+      const params = new URLSearchParams(window.location.search);
+      const preselect = params.get('classId');
+      if (preselect && classes.some(c => c._id === preselect)) {
+        select.value = preselect;
+        loadRoster();
+      }
+    };
+
+    const statusOptions = (selected) => `
+      <option value="present" ${selected === 'present' ? 'selected' : ''}>Present</option>
+      <option value="absent" ${selected === 'absent' ? 'selected' : ''}>Absent</option>
+      <option value="late" ${selected === 'late' ? 'selected' : ''}>Late</option>
+      <option value="excused" ${selected === 'excused' ? 'selected' : ''}>Excused</option>
+    `;
+
+    const renderRosterTable = () => {
+      const tbody = document.getElementById('rosterTableBody');
+      if (!currentRoster.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted-soft py-4">No students enrolled in this class yet. Add students via "My Classes" → Manage Roster.</td></tr>`;
+        document.getElementById('saveAttendanceBtn').disabled = true;
+        return;
+      }
+      tbody.innerHTML = currentRoster.map(s => `
+        <tr data-student-id="${s._id}">
+          <td>${s.rollNumber || '—'}</td>
+          <td>${s.name}</td>
+          <td>
+            <select class="form-select form-select-sm status-select" style="width:130px;">
+              ${statusOptions(s.status || 'present')}
+            </select>
+          </td>
+          <td>
+            <input type="text" class="form-control form-control-sm remarks-input" value="${s.remarks || ''}" placeholder="optional">
+          </td>
+        </tr>
+      `).join('');
+      document.getElementById('saveAttendanceBtn').disabled = false;
+    };
+
+    const loadRoster = async () => {
+      const classId = document.getElementById('classSelect').value;
+      const date = document.getElementById('dateInput').value;
+      if (!classId || !date) return;
+
+      try {
+        const data = await API.get(`/attendance/class/${classId}/date/${date}`);
+        if (data.attendance) {
+          // Existing record — pre-fill statuses
+          currentRoster = data.attendance.records.map(r => ({
+            _id: r.student._id,
+            name: r.student.name,
+            rollNumber: r.student.rollNumber,
+            status: r.status,
+            remarks: r.remarks,
+          }));
+          document.getElementById('rosterMeta').textContent = 'Editing existing record for this date';
+        } else {
+          currentRoster = data.roster.map(s => ({ ...s, status: 'present', remarks: '' }));
+          document.getElementById('rosterMeta').textContent = 'New attendance record';
+        }
+        document.getElementById('rosterCardTitle').textContent = `Roster — ${document.getElementById('classSelect').selectedOptions[0].textContent}`;
+        renderRosterTable();
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    };
+
+    document.getElementById('loadRosterBtn').addEventListener('click', loadRoster);
+
+    document.getElementById('markAllPresentBtn').addEventListener('click', () => {
+      document.querySelectorAll('.status-select').forEach(sel => sel.value = 'present');
+    });
+    document.getElementById('markAllAbsentBtn').addEventListener('click', () => {
+      document.querySelectorAll('.status-select').forEach(sel => sel.value = 'absent');
+    });
+
+    document.getElementById('saveAttendanceBtn').addEventListener('click', async () => {
+      const classId = document.getElementById('classSelect').value;
+      const date = document.getElementById('dateInput').value;
+      const rows = document.querySelectorAll('#rosterTableBody tr[data-student-id]');
+
+      const records = Array.from(rows).map(row => ({
+        student: row.dataset.studentId,
+        status: row.querySelector('.status-select').value,
+        remarks: row.querySelector('.remarks-input').value.trim(),
+      }));
+
+      const btn = document.getElementById('saveAttendanceBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        await API.post('/attendance/mark', { classSessionId: classId, date, records });
+        UI.toast('Attendance saved successfully', 'success');
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Attendance';
+      }
+    });
+
+    loadClasses();
+  </script>
+</body>
+</html>

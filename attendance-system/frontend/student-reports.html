@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports · AttendCloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="sidebar-mount"></div>
+    <main class="main-content" id="main-mount">
+
+      <div class="card card-ledger">
+        <div class="card-body text-center py-5">
+          <div style="font-size:2.4rem;">&#9636;</div>
+          <h4 class="display-font mt-2">Download Your Attendance Report</h4>
+          <p class="text-muted-soft mb-4" style="max-width:480px; margin:0 auto;">
+            Export your complete attendance history, including per-subject breakdowns,
+            as a PDF or Excel file — useful for scholarship applications, leave requests,
+            or your own records.
+          </p>
+          <div class="d-flex justify-content-center gap-3">
+            <button class="btn btn-ink" id="downloadPDFBtn">Download PDF</button>
+            <button class="btn btn-outline-ink" id="downloadExcelBtn">Download Excel</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    const user = Auth.guard(['student']);
+    UI.renderShell('Reports');
+
+    const triggerDownload = (blob, filename) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    };
+
+    document.getElementById('downloadPDFBtn').addEventListener('click', async () => {
+      try {
+        const blob = await API.downloadBlob(`/reports/student/${user._id}/pdf`);
+        triggerDownload(blob, `my_attendance_report.pdf`);
+        UI.toast('Report downloaded', 'success');
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    });
+
+    document.getElementById('downloadExcelBtn').addEventListener('click', async () => {
+      try {
+        const blob = await API.downloadBlob(`/reports/student/${user._id}/excel`);
+        triggerDownload(blob, `my_attendance_report.xlsx`);
+        UI.toast('Report downloaded', 'success');
+      } catch (err) {
+        UI.toast(err.message, 'danger');
+      }
+    });
+  </script>
+</body>
+</html>
