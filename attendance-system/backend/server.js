@@ -26,7 +26,7 @@ app.use(
     origin: [
     'http://localhost:5500',
     'http://127.0.0.1:5500',
-    'http://10.217.104.16:5500'
+    'http://10.217.104.16:5500',
     'https://legendary-gnome-ea6d7b.netlify.app'
   ],
     credentials: true,
