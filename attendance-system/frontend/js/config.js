@@ -3,7 +3,7 @@
    to Render/AWS so the frontend points at the live API.
    ========================================================================== */
 window.APP_CONFIG = {
-  API_BASE_URL: 'http://10.217.104.16:5000/api',
+  API_BASE_URL: 'https://attendance-management-system-6a9w.onrender.com/api',
   // Example production value:
   // API_BASE_URL: 'https://attendance-api.onrender.com/api',
 };
