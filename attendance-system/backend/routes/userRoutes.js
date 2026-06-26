@@ -10,13 +10,14 @@ const {
 } = require('../controllers/userController');
 const { protect, authorize } = require('../middleware/auth');
 
-router.use(protect, authorize('admin'));
+// Teacher and Admin can view users (used for roster)
+router.get('/', protect, authorize('admin', 'teacher'), getUsers);
 
-router.post('/', createUser);
-router.get('/', getUsers);
-router.get('/:id', getUserById);
-router.put('/:id', updateUser);
-router.delete('/:id', deleteUser);
-router.put('/:id/reset-password', resetPassword);
+// Admin only
+router.post('/', protect, authorize('admin'), createUser);
+router.get('/:id', protect, authorize('admin'), getUserById);
+router.put('/:id', protect, authorize('admin'), updateUser);
+router.delete('/:id', protect, authorize('admin'), deleteUser);
+router.put('/:id/reset-password', protect, authorize('admin'), resetPassword);
 
 module.exports = router;
